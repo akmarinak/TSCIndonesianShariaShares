@@ -1,0 +1,173 @@
+---
+title: "Data Mining : Time Series Clustering"
+output: html_notebook
+---
+
+## Problem Understanding
+
+Working with dataset that has high dimensions can be very ineffective due to limited resources. It takes a really long time, and a large amount of storage space to process the whole high-dimension data. Therefore, a high-level representation of the data is required.
+
+When we work on forecasting time-series data, the most important process is building a time series model. Based on Box-Jenkins method, the general steps in building ARIMA (Autoregressive Integrated Moving Average) model are as follow:
+
+1. Observe the time series plots to identify the series and gain insight to understand the data
+2. Detecting stationarity
+3. Detecting seasonality
+4. Pre-process the data to obtain stationarity
+5. List down all tentative models based on the order (number of time lags) obtained after identifying the ACF and PACF plots
+6. Model Estimation
+7. Model Diagnostics
+
+In forecasting, these steps are easy and fast for time series data which have small dimensions. However, for the dataset which have very large dimensions, it will take longer. So the problem now is, **how to quickly identify time series data with high dimension?**
+
+Many data miners are looking for hidden information in data such as frequent patterns, anomalies, or natural groupings. Generally, data mining tasks typically include extracting information, clustering, classification, finding rules, summarizing data, and visualizing.
+
+>Data mining techniques can be applied to time series data. - Caroline, K. (2015)
+
+The basic philosophy of data mining implies that potential loss of information should be avoided by understanding that studying raw data is less efficient, and takes a very long time. In this project I will use one of the data mining techniques, clustering. It aims to identify structures in a set that are not labeled and objectively organizing the data into several homogeneous groups. In this case, high dimensional multivariable data is used, and data mining is used as the pre-processing stage. 
+
+
+## Analytical Approach
+
+According to Roelofsen (2018), cluster analysis can be divided into three different parts, namely:
+* determine measurements to measure equations between observations
+* selecting the method used to obtain the results
+clustering
+* selecting the number of clusters formed
+
+> Reviewing the literature, one can conclude that most of clustering time-series related works are classified into three categories: Whole time-series clustering, Subsequence clustering, Time point clustering.
+- Aghabozorgi et al (2015)
+
+The focus of this study is on the **whole clustering** category because the research target is to group several time series (ie, Islamic stocks) of the same length into several clusters.
+
+## Data Understanding
+
+Stock index is an indicator of stock price or stock price movement in lots. The index serves as an indicator of market trends, meaning that the movement of the index describes market conditions at any one time, whether the market is active or sluggish.
+The stock price index in Indonesia is listed neatly on the Indonesia Stock Exchange (Bursa Efek Indonesia). One type of stock index is the Sharia Stock Index. The Islamic stock index is an index that includes around 300 stocks which accommodate Islamic law. The IDX has two Islamic stock price indexes, namely the Jakarta Islamic Index (JII) and the Indonesian Sharia Stock Index (ISSI).
+
+ISSI is an indicator of the performance of Indonesia's Islamic stock market. ISSI constituents are all Islamic stocks listed on the IDX and included in the list of sharia securities, issued by the Financial Services Authority (Otoritas Jasa Keuangan). This means that the IDX does not select Islamic stocks that are included in the ISSI. The number of companies that are included in the index calculation is not fixed and always changes in each period. Changes in the composition of stocks in the calculation of the Indonesian Sharia Stock Index (ISSI) will be announced on the IDX website by making a decree announcing the addition of new shares that are included in the index calculation, or those that have left the index calculation.
+
+The dataset used is the closing prices of the stocks which are included in ISSI. The dataset was scrapped from [this site](http://www.duniainvestasi.com/bei/), and the closing price used are from January 1st 2016 - September 30th 2019.
+
+## R Packages
+
+The packages used for clustering in this projects are [**cluster**](https://cran.r-project.org/web/packages/cluster/index.html) and [**TSclust**](https://cran.r-project.org/web/packages/TSclust/index.html). The other useful packages which also help to build the code are, [**rlang**](https://cran.r-project.org/web/packages/rlang/index.html) and [**zoo**](https://cran.r-project.org/web/packages/zoo/index.html).
+
+
+```{r warning=TRUE}
+###Package used for Time-Series Clustering###
+library(cluster)
+library(TSclust)
+library(zoo)
+library(rlang)
+```
+
+
+The data file used in this project is the one which was already cleaned from missing values and saved in csv format. Total number of the stocks which met the requirement are 238 stocks.
+
+``` {r echo=TRUE}
+###Import Data###
+mydata=read.csv("saham_ISSI.csv", header=TRUE, stringsAsFactors = FALSE)
+ISSI_stocks=zoo(mydata[,-1],order.by=as.Date(as.character(mydata[,1]),"%m/%d/%Y"))
+stocksdata=ts(ISSI_stocks)
+head(mydata)
+```
+
+This project implements model-free distance measurement. The measurement chosen in this analysis is **Autocorrelation Based Distance** because it does not required model building. This is of course related to the purpose of the analysis carried out which aims to reduce high-dimension multivariable data by analyzing all of the dimension (variable) exist to look for similar patterns.
+
+The formula for the autocorrelation-based distance measure is specifically indicated as follows:
+(Montero and Vilar, 2014):
+$$d_{ACF}(X_T,Y_T)=\sqrt{(\hat{\rho} X_T-\hat{\rho} Y_T)'(\hat{\rho} X_T-\hat{\rho} Y_T)}$$
+
+where,
+
+$d_{ACF}(X_T,Y_T)$ is autocorrelation distance vectors of $X_T$ and $Y_T$; 
+
+$\hat{\rho} X_T$ & $\hat{\rho} Y_T$ respectively are autocorrelation vector estimation of $X_T$ and $Y_T$.
+
+The clustering method used is agglomerative hierarchical clustering with **complete linkage** method. Complete linkage uses the similarity matrix update  based on the farthest distance between the objects (maximum distance).
+General agglomerative algorithms usually start with finding elements in the distance matrix $D=(d_{i,k})$ and combine the corresponding objects. Let the variables $X_T$ and $Y_T$ to form $(XY)$, where $d_{XY}=d_{ACF}(X_T,Y_T)$
+
+Using complete linkage, the distance between  $(XY)$ and other variables, for example $Z_T$ can written as follows:
+$$d_{(xy)z}=max(d_{xz},d_{yz})$$
+
+where
+
+$d_{xz}$ and $d_{yz}$ respectively are the distance between variables $X_T$ and $Z_T$, and between variables $Y_T$ and $Z_T$; 
+
+$d_{(xy)z}$ is the distance between $(XY)$ and variable $Z_T$.
+
+
+```{r}
+###Distance Measurement###
+ACFdist=diss(stocksdata, "ACF")
+dist_matrix=as.matrix(ACFdist)
+hc=hclust(dist(ACFdist),method="complete",members=NULL)
+```
+
+To get a better insight, let's see the clustering visualization by creating the dendrogram.
+
+```{r, fig.width=10}
+###Plot Dendrogram###
+plot(hc, hang=-1,cex=0.5)
+abline(h=7,col="blue")
+rect.hclust(hc,k=12,border="red")
+```
+
+As the author, I decide that the number of clusters taken is 12, based on the my observation toward the branches in the dendrogram. Then I create the cluster subset to analyze each cluster easily, and calculate the statistics descriptive of each cluster.
+
+``` {r}
+###Cluster Subset###
+clust=cutree(hc,k=12)
+stocks_data=t(data.frame(stocksdata))
+c1=subset(stocks_data,clust==1)
+c2=subset(stocks_data,clust==2)
+c3=subset(stocks_data,clust==3)
+c4=subset(stocks_data,clust==4)
+c5=subset(stocks_data,clust==5)
+c6=subset(stocks_data,clust==6)
+c7=subset(stocks_data,clust==7)
+c8=subset(stocks_data,clust==8)
+c9=subset(stocks_data,clust==9)
+c10=subset(stocks_data,clust==10)
+c11=subset(stocks_data,clust==11)
+c12=subset(stocks_data,clust==12)
+```
+
+
+```{r echo=FALSE}
+###summary###
+desc1=cbind(1,mean(c1),(sd(c1)/mean(c1)),min(c1),max(c1))
+desc2=cbind(2,mean(c2),(sd(c2)/mean(c2)),min(c2),max(c2))
+desc3=cbind(3,mean(c3),(sd(c3)/mean(c3)),min(c3),max(c3))
+desc4=cbind(4,mean(c4),(sd(c4)/mean(c4)),min(c4),max(c4))
+desc5=cbind(5,mean(c5),(sd(c5)/mean(c5)),min(c5),max(c5))
+desc6=cbind(6,mean(c6),(sd(c6)/mean(c6)),min(c6),max(c6))
+desc7=cbind(7,mean(c7),(sd(c7)/mean(c7)),min(c7),max(c7))
+desc8=cbind(8,mean(c8),(sd(c8)/mean(c8)),min(c8),max(c8))
+desc9=cbind(9,mean(c9),(sd(c9)/mean(c9)),min(c9),max(c9))
+desc10=cbind(10,mean(c10),(sd(c10)/mean(c10)),min(c10),max(c10))
+desc11=cbind(11,mean(c11),(sd(c11)/mean(c11)),min(c11),max(c11))
+desc12=cbind(12,mean(c12),(sd(c12)/mean(c12)),min(c12),max(c12))
+desc=data.frame(rbind(desc1,desc2,desc3,desc4,desc5,desc6,desc7,desc8,desc9,desc10,desc11,desc12))
+colnames(desc)=c("Cluster", "Mean", "Coef. of Variation","Min Value", "Max Value")
+desc
+```
+
+Below is the head of the clustering result.
+
+```{r}
+###Cluster Members###
+output=data.frame(clust)
+output=within(output,{clust<-as.factor(clust)})
+head(output)
+```
+
+
+## References
+* Aghabozorgi, S., Shirkhorshidi, A. S., dan Ying, W. T. 2015. Timeseries clustering-A decade review. Information Systems. 53:16-38.
+* Cryer, J. D., dan Chan, K. S. 2008. Time Series Analysis : With Application in R : Second Edition. USA : Springer
+* Caroline K. 2015. Time Series Data Mining Methods: A Review. Thesis. Humboldt University: Berlin
+* Johnson, R. A., dan Wichern, D. W. 2007. Applied Multivariate Statistical Analysis. USA: Pearson Prentice Hall
+* Montero, P., & Vilar, J. A. 2014. TSclust: An R Package for Time Series Clustering. Journal of Statistical Software. 62:1-43.
+* Riyadi, M. A. A., Pratiwi, D. S., Irawan, A. R., dan Fithriasari, K. 2017. Clustering stationarity and non-stationarity time series based on autocorrelation distance of hierarchical and k-means algorithms. International Journal of Advances in Intelligent Informatics. 3: 154-160.
+* Roelofsen, P. 2018. Time Series Clustering. Tesis. Amsterdam: Vrije Universiteit Amsterdam
